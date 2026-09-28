@@ -17,30 +17,48 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px;borde
 <div id="status" style="color:var(--mut);font-size:13px">Memuat…</div>
 <div class="grid" id="cards"></div>
 <div class="c"><b>Grafik histori</b> <small>(kelembapan rata-rata & level air)</small><canvas id="ch" width="800" height="180"></canvas></div>
-<div class="c" style="margin-top:12px"><b>Logbook</b><div class="wrap"><table><thead><tr><th>Waktu</th><th>Pompa</th><th>Alasan</th><th>Lembap</th><th>Air</th></tr></thead><tbody id="tb"></tbody></table></div></div>
+<div class="c" style="margin-top:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>Logbook <small>(10 data terakhir)</small></b><button id="dl" onclick="dlCsv()" style="background:var(--ok);color:#fff;border:0;border-radius:8px;padding:6px 12px;cursor:pointer">⬇ Download CSV</button></div><div class="wrap"><table><thead><tr><th>Waktu</th><th>Pompa</th><th>Alasan</th><th>Lembap</th><th>Air</th></tr></thead><tbody id="tb"></tbody></table></div></div>
 <script>
 // GANTI dengan URL Firebase Realtime Database kamu
 const DB="https://sistem-penyiraman-otomat-f51ff-default-rtdb.asia-southeast1.firebasedatabase.app";
 const $=s=>document.querySelector(s), fmt=t=>new Date(t).toLocaleString("id-ID");
 const card=(t,v,p)=>`<div class="c"><small>${t}</small><div class="v">${v}</div>${p!=null?`<div class="bar"><i style="width:${p}%"></i></div>`:""}</div>`;
-async function load(){
+let rows=[];
+async function loadLatest(){
   try{
-    const [l,h]=await Promise.all([fetch(DB+"/latest.json").then(r=>r.json()),
-      fetch(DB+'/logs.json?orderBy="$key"&limitToLast=200').then(r=>r.json())]);
-    if(l){
-      const age=Date.now()-l.ts, online=age<30000;
-      $("#status").innerHTML=`Update terakhir: ${fmt(l.ts)} <span class="pill" style="background:${online?"var(--ok)":"var(--bad)"}">${online?"ONLINE":"OFFLINE"}</span>`;
-      $("#cards").innerHTML=
-        card("Pompa",`<span class="pill" style="background:${l.pump?"var(--ok)":"#888"}">${l.pump?"NYALA":"MATI"}</span>`)+
-        card("Alasan",l.reason)+card("Level air",l.level.toFixed(0)+"%",l.level)+
-        card("Rata-rata lembap",l.avg.toFixed(0)+"%",l.avg)+
-        l.m.map((x,i)=>card("Pot "+(i+1),x.toFixed(0)+"%",x)).join("")+
-        (l.level<10?card("⚠️ Peringatan","Air habis"):"")+(!l.sensorOk?card("⚠️ Peringatan","Sensor error"):"");
-    }
-    const rows=Object.values(h||{}).sort((a,b)=>a.ts-b.ts);
-    $("#tb").innerHTML=rows.slice().reverse().slice(0,50).map(r=>`<tr><td>${fmt(r.ts)}</td><td>${r.pump?"ON":"OFF"}</td><td>${r.reason}</td><td>${r.avg.toFixed(0)}%</td><td>${r.level.toFixed(0)}%</td></tr>`).join("");
-    draw(rows);
+    const l=await fetch(DB+"/latest.json").then(r=>r.json());
+    if(!l)return;
+    const online=Date.now()-l.ts<30000;
+    $("#status").innerHTML=`Update terakhir: ${fmt(l.ts)} <span class="pill" style="background:${online?"var(--ok)":"var(--bad)"}">${online?"ONLINE":"OFFLINE"}</span>`;
+    $("#cards").innerHTML=
+      card("Pompa",`<span class="pill" style="background:${l.pump?"var(--ok)":"#888"}">${l.pump?"NYALA":"MATI"}</span>`)+
+      card("Alasan",l.reason)+card("Level air",l.level.toFixed(0)+"%",l.level)+
+      card("Rata-rata lembap",l.avg.toFixed(0)+"%",l.avg)+
+      l.m.map((x,i)=>card("Pot "+(i+1),x.toFixed(0)+"%",x)).join("")+
+      (l.level<10?card("⚠️ Peringatan","Air habis"):"")+(!l.sensorOk?card("⚠️ Peringatan","Sensor error"):"");
   }catch(e){$("#status").textContent="Gagal memuat data: "+e.message}
+}
+async function loadLogs(){
+  try{
+    const h=await fetch(DB+'/logs.json?orderBy="$key"&limitToLast=100').then(r=>r.json());
+    rows=Object.values(h||{}).sort((a,b)=>a.ts-b.ts);
+    $("#tb").innerHTML=rows.slice(-10).reverse().map(r=>`<tr><td>${fmt(r.ts)}</td><td>${r.pump?"ON":"OFF"}</td><td>${r.reason}</td><td>${r.avg.toFixed(0)}%</td><td>${r.level.toFixed(0)}%</td></tr>`).join("");
+    draw(rows);
+  }catch(e){}
+}
+async function dlCsv(){
+  const b=$("#dl");b.textContent="Menyiapkan…";
+  try{
+    const h=await fetch(DB+"/logs.json").then(r=>r.json());
+    const all=Object.values(h||{}).sort((a,b)=>a.ts-b.ts), n=v=>String(v).replace(".",",");
+    const p=t=>{const d=new Date(t),z=x=>String(x).padStart(2,"0");return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`};
+    const lines=["sep=;","Waktu;Pompa;Alasan;Pot1 (%);Pot2 (%);Pot3 (%);Pot4 (%);Rata-rata lembap (%);Level air (%);Sensor OK"]
+      .concat(all.map(r=>[p(r.ts),r.pump?"ON":"OFF",r.reason,...r.m.map(n),n(r.avg),n(r.level),r.sensorOk?"ya":"tidak"].join(";")));
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob(["\ufeff"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"}));
+    a.download="logbook_penyiraman.csv";a.click();
+  }catch(e){alert("Gagal download: "+e.message)}
+  b.textContent="⬇ Download CSV";
 }
 function draw(rows){
   const c=$("#ch"),x=c.getContext("2d");x.clearRect(0,0,c.width,c.height);
@@ -51,5 +69,5 @@ function draw(rows){
     rows.forEach((r,i)=>{const px=(r.ts-t0)/(t1-t0)*(c.width-10)+5,py=c.height-5-r[k]/100*(c.height-10);i?x.lineTo(px,py):x.moveTo(px,py)});x.stroke()});
   x.fillStyle="#2e9e5b";x.fillText("● Lembap",8,12);x.fillStyle="#2b7de9";x.fillText("● Air",70,12);
 }
-load();setInterval(load,5000);
+loadLatest();loadLogs();setInterval(loadLatest,5000);setInterval(loadLogs,60000);
 </script></body></html>
