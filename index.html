@@ -32,7 +32,7 @@ async function loadLatest(){
     $("#status").innerHTML=`Update terakhir: ${fmt(l.ts)} <span class="pill" style="background:${online?"var(--ok)":"var(--bad)"}">${online?"ONLINE":"OFFLINE"}</span>`;
     $("#cards").innerHTML=
       card("Pompa",`<span class="pill" style="background:${l.pump?"var(--ok)":"#888"}">${l.pump?"NYALA":"MATI"}</span>`)+
-      card("Alasan",l.reason)+card("Level air",l.level.toFixed(0)+"%",l.level)+
+      card("Status",l.reason)+card("Level air",l.level.toFixed(0)+"%",l.level)+
       card("Rata-rata lembap",l.avg.toFixed(0)+"%",l.avg)+
       l.m.map((x,i)=>card("Pot "+(i+1),x.toFixed(0)+"%",x)).join("")+
       (l.level<10?card("⚠️ Peringatan","Air habis"):"")+(!l.sensorOk?card("⚠️ Peringatan","Sensor error"):"");
